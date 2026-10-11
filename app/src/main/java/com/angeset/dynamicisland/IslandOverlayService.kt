@@ -225,6 +225,12 @@ class IslandOverlayService : Service() {
             val now = s == BatteryManager.BATTERY_STATUS_CHARGING || s == BatteryManager.BATTERY_STATUS_FULL
             if (now && !charging) showForEvent("charging")
             charging = now
+            if (expanded && charging && intent != null) {
+                val voltage = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)
+                val current = (getSystemService(BATTERY_SERVICE) as BatteryManager).getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+                val watts = if (voltage > 0 && current != Int.MIN_VALUE && current != 0) String.format(Locale.US, "%.2f W", abs(current.toDouble()) * voltage / 1_000_000_000.0) else "Unavailable"
+                details?.text = "Charging  •  $watts"
+            }
             if (!charging && !expanded && !hasNotification) island?.visibility = View.GONE
         }
     }
@@ -234,7 +240,7 @@ class IslandOverlayService : Service() {
         island?.visibility = View.VISIBLE
         headline?.text = when (reason) { "charging" -> "⚡"; "notification" -> "●"; "screen" -> "◉"; "stopwatch" -> "◷"; "timer" -> "⏱"; "sound" -> "🎙"; else -> "" }
         uiHandler.removeCallbacks(hideEvent)
-        if (!charging) uiHandler.postDelayed(hideEvent, 6000L)
+        if (reason == "notification" && !charging) uiHandler.postDelayed(hideEvent, 6000L)
         runCatching { windowManager?.updateViewLayout(island, params) }
     }
     private fun collapse(pill: LinearLayout) {
