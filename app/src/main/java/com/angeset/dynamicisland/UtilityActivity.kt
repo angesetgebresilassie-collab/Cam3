@@ -1,6 +1,8 @@
 package com.angeset.dynamicisland
 
 import android.app.Activity
+import android.content.Context
+import android.media.projection.MediaProjectionManager
 import android.app.AlertDialog
 import android.os.Bundle
 import android.media.MediaRecorder
@@ -47,7 +49,10 @@ class UtilityActivity : Activity() {
                 add("Reset") { running = false; elapsed = 0; status.text = "00:00.0" }
             }
             "timer" -> add("Set countdown") { showTimerDialog() }
-            "screen" -> add("Open device screen capture") { Toast.makeText(this, "Use the system Screen Record tile to start a capture.", Toast.LENGTH_LONG).show() }
+            "screen" -> {
+                add("Start screen recording") { val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager; startActivityForResult(mgr.createScreenCaptureIntent(), 41) }
+                add("Stop and save") { startService(android.content.Intent(this, ScreenRecordingService::class.java).setAction("STOP")); status.text = "Stopped. Video is saved in app Movies storage." }
+            }
             "sound" -> {
                 add("Start sound recording") { startSoundRecording() }
                 add("Stop and save") { stopSoundRecording() }
@@ -73,6 +78,15 @@ class UtilityActivity : Activity() {
                 override fun onFinish() { status.text = "Timer complete"; Toast.makeText(this@UtilityActivity, "Timer complete", Toast.LENGTH_LONG).show() }
             }.start()
         }.setNegativeButton("Cancel", null).show()
+    }
+    @Deprecated("Android screen-capture consent callback")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 41 && resultCode == RESULT_OK && data != null) {
+            val service = android.content.Intent(this, ScreenRecordingService::class.java).putExtra("resultCode", resultCode).putExtra("data", data)
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(service) else startService(service)
+            status.text = "Screen recording started"
+        }
     }
     private fun startSoundRecording() {
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
