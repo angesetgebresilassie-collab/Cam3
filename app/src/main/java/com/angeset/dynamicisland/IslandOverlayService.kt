@@ -202,7 +202,7 @@ class IslandOverlayService : Service() {
             headline?.text = if (charging) "⚡" else if (!title.isNullOrBlank()) "●" else "⌄"
             details?.text = if (charging) "Battery $percent  •  $watts" else status
             details?.visibility = View.VISIBLE
-            controls?.visibility = if (!charging && !title.isNullOrBlank() && (title.contains("music", true) || title.contains("playing", true))) View.VISIBLE else View.GONE
+            controls?.visibility = if (!charging && prefs.getBoolean("notification_is_media", false)) View.VISIBLE else View.GONE
             utilityControls?.visibility = View.VISIBLE
             pill.setPadding(20, 15, 20, 12)
             params.width = (resources.displayMetrics.widthPixels * 0.86f).toInt()
