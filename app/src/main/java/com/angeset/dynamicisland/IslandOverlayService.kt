@@ -9,22 +9,29 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class IslandOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var island: LinearLayout? = null
     private var headline: TextView? = null
     private var details: TextView? = null
+    private var controls: LinearLayout? = null
     private var expanded = false
     private lateinit var params: WindowManager.LayoutParams
 
@@ -69,8 +76,19 @@ class IslandOverlayService : Service() {
             setPadding(0, 10, 0, 0)
             maxWidth = (resources.displayMetrics.widthPixels * 0.72f).toInt()
         }
+        controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            setPadding(0, 12, 0, 0)
+        }
+        addControl("⏮") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS) }
+        addControl("▶ / Ⅱ") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) }
+        addControl("⏭") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT) }
+        addControl("×") { expanded = true; toggleExpanded(pill, forceCollapse = true) }
         pill.addView(headline)
         pill.addView(details)
+        pill.addView(controls)
         island = pill
         params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -94,10 +112,9 @@ class IslandOverlayService : Service() {
                         startY = event.rawY
                         startPos = params.y
                         moved = false
-                        return false
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        if (kotlin.math.abs(event.rawY - startY) > 8) moved = true
+                        if (abs(event.rawY - startY) > 8) moved = true
                         if (moved) {
                             params.y = (startPos + event.rawY - startY).toInt().coerceAtLeast(0)
                             runCatching { windowManager?.updateViewLayout(pill, params) }
@@ -112,29 +129,69 @@ class IslandOverlayService : Service() {
         windowManager?.addView(pill, params)
     }
 
-    private fun toggleExpanded(pill: LinearLayout) {
-        expanded = !expanded
+    private fun addControl(label: String, action: () -> Unit) {
+        val button = Button(this).apply {
+            text = label
+            textSize = 12f
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.TRANSPARENT)
+            setOnClickListener { action() }
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(8, 0, 8, 0)
+        }
+        controls?.addView(button, LinearLayout.LayoutParams(0, 48, 1f))
+    }
+
+    private fun sendMediaKey(keyCode: Int) {
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        val now = android.os.SystemClock.uptimeMillis()
+        runCatching {
+            audio.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
+            audio.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
+        }
+    }
+
+    private fun toggleExpanded(pill: LinearLayout, forceCollapse: Boolean = false) {
+        expanded = if (forceCollapse) false else !expanded
         if (expanded) {
             val prefs = getSharedPreferences("island_state", MODE_PRIVATE)
             val title = prefs.getString("notification_title", null)
             val bodyText = prefs.getString("notification_text", null)
-            val battery = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-            val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-            val percent = if (level >= 0 && scale > 0) (level * 100 / scale).toString() + "%" else "—"
+            val batteryIntent = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+            val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
+            val chargeCounter = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+            val percent = if (level >= 0 && scale > 0) {
+                val base = level.toDouble() * 100.0 / scale
+                val estimatedFull = if (base > 0.0 && chargeCounter > 0) chargeCounter / (base / 100.0) else 0.0
+                val precise = if (estimatedFull > 0) chargeCounter * 100.0 / estimatedFull else base
+                String.format(Locale.US, "%.1f%%", precise.coerceIn(0.0, 100.0))
+            } else "—"
+            val voltageMv = batteryIntent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1) ?: -1
+            val currentUa = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+            val watts = if (voltageMv > 0 && currentUa != Int.MIN_VALUE && currentUa != 0) {
+                String.format(Locale.US, "%.2f W", abs(currentUa.toDouble()) * voltageMv / 1_000_000_000.0)
+            } else "Unavailable"
+            val charging = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) in
+                listOf(BatteryManager.BATTERY_STATUS_CHARGING, BatteryManager.BATTERY_STATUS_FULL)
             val status = if (!title.isNullOrBlank()) {
-                "LATEST NOTIFICATION\n" + title + "\n" + bodyText.orEmpty()
+                "LATEST NOTIFICATION\n$title\n${bodyText.orEmpty()}"
             } else {
                 "No notifications yet\nGrant notification access to show previews"
             }
-            headline?.text = "◉   Dynamic Island"
-            details?.text = status + "\n\nBattery  " + percent
+            headline?.text = if (charging) "⚡  Charging" else "◉   Dynamic Island"
+            details?.text = "$status\n\nBattery  $percent\nCharging power  $watts"
             details?.visibility = View.VISIBLE
-            pill.setPadding(26, 20, 26, 20)
-            params.width = (resources.displayMetrics.widthPixels * 0.82f).toInt()
+            controls?.visibility = View.VISIBLE
+            pill.setPadding(26, 20, 26, 16)
+            params.width = (resources.displayMetrics.widthPixels * 0.86f).toInt()
         } else {
             headline?.text = "●     Dynamic Island     ◖"
             details?.visibility = View.GONE
+            controls?.visibility = View.GONE
             pill.setPadding(25, 11, 25, 11)
             params.width = WindowManager.LayoutParams.WRAP_CONTENT
         }
