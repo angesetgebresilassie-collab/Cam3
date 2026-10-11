@@ -228,9 +228,13 @@ class IslandOverlayService : Service() {
             if (!charging && !expanded && !hasNotification) island?.visibility = View.GONE
         }
     }
+    private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val hideEvent = Runnable { if (!expanded && !charging) { island?.visibility = View.GONE; hasNotification = false } }
     private fun showForEvent(reason: String) {
         island?.visibility = View.VISIBLE
         headline?.text = when (reason) { "charging" -> "⚡"; "notification" -> "●"; "screen" -> "◉"; "stopwatch" -> "◷"; "timer" -> "⏱"; "sound" -> "🎙"; else -> "" }
+        uiHandler.removeCallbacks(hideEvent)
+        if (!charging) uiHandler.postDelayed(hideEvent, 6000L)
         runCatching { windowManager?.updateViewLayout(island, params) }
     }
     private fun collapse(pill: LinearLayout) {
@@ -261,6 +265,7 @@ class IslandOverlayService : Service() {
     }
     override fun onDestroy() {
         runCatching { unregisterReceiver(batteryReceiver) }
+        uiHandler.removeCallbacksAndMessages(null)
         island?.let { runCatching { windowManager?.removeView(it) } }
         island = null
         super.onDestroy()
