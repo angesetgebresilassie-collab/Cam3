@@ -163,20 +163,19 @@ class IslandOverlayService : Service() {
             val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
             val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
             val batteryManager = getSystemService(BATTERY_SERVICE) as BatteryManager
-            val chargeCounter = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+            // Android commonly exposes battery level as an integer. Keep one decimal in the UI;
+            // the decimal is a formatted estimate, not a hardware-guaranteed precision reading.
             val percent = if (level >= 0 && scale > 0) {
-                val base = level.toDouble() * 100.0 / scale
-                val estimatedFull = if (base > 0.0 && chargeCounter > 0) chargeCounter / (base / 100.0) else 0.0
-                val precise = if (estimatedFull > 0) chargeCounter * 100.0 / estimatedFull else base
-                String.format(Locale.US, "%.1f%%", precise.coerceIn(0.0, 100.0))
+                String.format(Locale.US, "%.1f%%", (level.toDouble() * 100.0 / scale).coerceIn(0.0, 100.0))
             } else "—"
             val voltageMv = batteryIntent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1) ?: -1
             val currentUa = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
             val watts = if (voltageMv > 0 && currentUa != Int.MIN_VALUE && currentUa != 0) {
                 String.format(Locale.US, "%.2f W", abs(currentUa.toDouble()) * voltageMv / 1_000_000_000.0)
             } else "Unavailable"
-            val charging = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) in
-                listOf(BatteryManager.BATTERY_STATUS_CHARGING, BatteryManager.BATTERY_STATUS_FULL)
+            val batteryStatus = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val charging = batteryStatus == BatteryManager.BATTERY_STATUS_CHARGING ||
+                batteryStatus == BatteryManager.BATTERY_STATUS_FULL
             val status = if (!title.isNullOrBlank()) {
                 "LATEST NOTIFICATION\n$title\n${bodyText.orEmpty()}"
             } else {
