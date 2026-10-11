@@ -33,6 +33,9 @@ class IslandOverlayService : Service() {
     private var details: TextView? = null
     private var controls: LinearLayout? = null
     private var expanded = false
+    private var charging = false
+    private var hasNotification = false
+    private var utilityControls: LinearLayout? = null
     private lateinit var params: WindowManager.LayoutParams
 
     override fun onCreate() {
@@ -49,7 +52,15 @@ class IslandOverlayService : Service() {
         else Notification.Builder(this).setContentTitle("Dynamic Island is active")
             .setSmallIcon(android.R.drawable.ic_media_play).build()
         startForeground(41, notification)
-        if (Settings.canDrawOverlays(this)) showIsland() else stopSelf()
+        if (Settings.canDrawOverlays(this)) {
+            showIsland()
+            val b = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val s = b?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            charging = s == BatteryManager.BATTERY_STATUS_CHARGING || s == BatteryManager.BATTERY_STATUS_FULL
+            hasNotification = !getSharedPreferences("island_state", MODE_PRIVATE).getString("notification_title", null).isNullOrBlank()
+            registerReceiver(batteryReceiver, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            if (charging) showForEvent("charging") else if (hasNotification) showForEvent("notification")
+        } else stopSelf()
     }
 
     private fun showIsland() {
@@ -57,12 +68,13 @@ class IslandOverlayService : Service() {
         val pill = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(25, 11, 25, 11)
+            setPadding(20, 8, 20, 8)
             background = pillBackground()
             elevation = 12f
+            visibility = View.GONE
         }
         headline = TextView(this).apply {
-            text = "●     Dynamic Island     ◖"
+            text = ""
             setTextColor(Color.WHITE)
             textSize = 13f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -82,10 +94,14 @@ class IslandOverlayService : Service() {
             visibility = View.GONE
             setPadding(0, 12, 0, 0)
         }
-        addControl("⏮") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS) }
-        addControl("▶ / Ⅱ") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) }
-        addControl("⏭") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT) }
-        addControl("×") { expanded = true; toggleExpanded(pill, forceCollapse = true) }
+        addControl(controls!!, "⏮") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS) }
+        addControl(controls!!, "▶Ⅱ") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) }
+        addControl(controls!!, "⏭") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT) }
+        addControl(controls!!, "×") { collapse(pill) }
+        addControl(utilityControls!!, "◉") { openUtility("screen") }
+        addControl(utilityControls!!, "◷") { openUtility("stopwatch") }
+        addControl(utilityControls!!, "⏱") { openUtility("timer") }
+        addControl(utilityControls!!, "🎙") { openUtility("sound") }
         pill.addView(headline)
         pill.addView(details)
         pill.addView(controls)
@@ -101,7 +117,7 @@ class IslandOverlayService : Service() {
             y = 10
         }
 
-        pill.setOnClickListener { toggleExpanded(pill) }
+        pill.setOnClickListener { if (expanded) collapse(pill) else toggleExpanded(pill) }
         pill.setOnTouchListener(object : View.OnTouchListener {
             private var startY = 0f
             private var startPos = 0
@@ -129,7 +145,7 @@ class IslandOverlayService : Service() {
         windowManager?.addView(pill, params)
     }
 
-    private fun addControl(label: String, action: () -> Unit) {
+    private fun addControl(row: LinearLayout, label: String, action: () -> Unit) {
         val button = Button(this).apply {
             text = label
             textSize = 12f
@@ -141,7 +157,7 @@ class IslandOverlayService : Service() {
             minimumWidth = 0
             setPadding(8, 0, 8, 0)
         }
-        controls?.addView(button, LinearLayout.LayoutParams(0, 48, 1f))
+        row.addView(button, LinearLayout.LayoutParams(0, 44, 1f))
     }
 
     private fun sendMediaKey(keyCode: Int) {
@@ -181,31 +197,68 @@ class IslandOverlayService : Service() {
             } else {
                 "No notifications yet\nGrant notification access to show previews"
             }
-            headline?.text = if (charging) "⚡  Charging" else "◉   Dynamic Island"
-            details?.text = "$status\n\nBattery  $percent\nCharging power  $watts"
+            headline?.text = if (charging) "⚡" else if (!title.isNullOrBlank()) "●" else "⌄"
+            details?.text = if (charging) "Battery $percent  •  $watts" else status
             details?.visibility = View.VISIBLE
-            controls?.visibility = View.VISIBLE
-            pill.setPadding(26, 20, 26, 16)
+            controls?.visibility = if (!title.isNullOrBlank() && (title.contains("music", true) || title.contains("playing", true))) View.VISIBLE else View.GONE
+            utilityControls?.visibility = View.VISIBLE
+            pill.setPadding(20, 15, 20, 12)
             params.width = (resources.displayMetrics.widthPixels * 0.86f).toInt()
         } else {
-            headline?.text = "●     Dynamic Island     ◖"
+            headline?.text = ""
             details?.visibility = View.GONE
             controls?.visibility = View.GONE
-            pill.setPadding(25, 11, 25, 11)
+            utilityControls?.visibility = View.GONE
+            pill.setPadding(20, 8, 20, 8)
             params.width = WindowManager.LayoutParams.WRAP_CONTENT
+            if (!charging && !hasNotification) island?.visibility = View.GONE
         }
         pill.background = pillBackground()
         runCatching { windowManager?.updateViewLayout(pill, params) }
     }
 
+    private val batteryReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            val s = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val now = s == BatteryManager.BATTERY_STATUS_CHARGING || s == BatteryManager.BATTERY_STATUS_FULL
+            if (now && !charging) showForEvent("charging")
+            charging = now
+            if (!charging && !expanded && !hasNotification) island?.visibility = View.GONE
+        }
+    }
+    private fun showForEvent(reason: String) {
+        island?.visibility = View.VISIBLE
+        headline?.text = when (reason) { "charging" -> "⚡"; "notification" -> "●"; "screen" -> "◉"; "stopwatch" -> "◷"; "timer" -> "⏱"; "sound" -> "🎙"; else -> "" }
+        runCatching { windowManager?.updateViewLayout(island, params) }
+    }
+    private fun collapse(pill: LinearLayout) {
+        expanded = false; details?.visibility = View.GONE; controls?.visibility = View.GONE; utilityControls?.visibility = View.GONE
+        headline?.text = ""; pill.setPadding(20, 8, 20, 8); params.width = WindowManager.LayoutParams.WRAP_CONTENT
+        if (!charging && !hasNotification) pill.visibility = View.GONE
+        pill.background = pillBackground(); runCatching { windowManager?.updateViewLayout(pill, params) }
+    }
+    private fun openUtility(mode: String) {
+        showForEvent(mode)
+        startActivity(Intent(this, UtilityActivity::class.java).putExtra("mode", mode).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
     private fun pillBackground() = GradientDrawable().apply {
         setColor(Color.rgb(4, 4, 6))
         cornerRadius = if (expanded) 38f else 60f
         setStroke(1, Color.rgb(50, 50, 56))
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            "ISLAND_NOTIFICATION" -> { hasNotification = true; showForEvent("notification") }
+            "ISLAND_TIMER" -> showForEvent("timer")
+            "ISLAND_STOPWATCH" -> showForEvent("stopwatch")
+            "ISLAND_SOUND" -> showForEvent("sound")
+            "ISLAND_SCREEN" -> showForEvent("screen")
+        }
+        return START_STICKY
+    }
     override fun onDestroy() {
+        runCatching { unregisterReceiver(batteryReceiver) }
         island?.let { runCatching { windowManager?.removeView(it) } }
         island = null
         super.onDestroy()
