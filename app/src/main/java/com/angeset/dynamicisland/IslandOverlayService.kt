@@ -94,6 +94,7 @@ class IslandOverlayService : Service() {
             visibility = View.GONE
             setPadding(0, 12, 0, 0)
         }
+        utilityControls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; visibility = View.GONE; setPadding(0, 4, 0, 0) }
         addControl(controls!!, "⏮") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS) }
         addControl(controls!!, "▶Ⅱ") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) }
         addControl(controls!!, "⏭") { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT) }
@@ -105,6 +106,7 @@ class IslandOverlayService : Service() {
         pill.addView(headline)
         pill.addView(details)
         pill.addView(controls)
+        pill.addView(utilityControls)
         island = pill
         params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
