@@ -19,5 +19,6 @@ class IslandNotificationListener : NotificationListenerService() {
             .putString("notification_package", sbn.packageName)
             .putLong("notification_time", sbn.postTime)
             .apply()
+        runCatching { startService(android.content.Intent(this, IslandOverlayService::class.java).setAction("ISLAND_NOTIFICATION")) }
     }
 }
