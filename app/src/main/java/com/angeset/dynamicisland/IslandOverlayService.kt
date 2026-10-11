@@ -116,7 +116,11 @@ class IslandOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = 10
+            val cutout = if (Build.VERSION.SDK_INT >= 30) {
+                windowManager?.currentWindowMetrics?.windowInsets?.displayCutout?.boundingRects?.firstOrNull()
+            } else null
+            y = cutout?.top ?: (resources.displayMetrics.density * 8).toInt()
+            x = cutout?.let { it.centerX() - resources.displayMetrics.widthPixels / 2 } ?: 0
         }
 
         pill.setOnClickListener { if (expanded) collapse(pill) else toggleExpanded(pill) }
