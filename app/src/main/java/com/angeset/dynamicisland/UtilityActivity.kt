@@ -3,6 +3,10 @@ package com.angeset.dynamicisland
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
+import android.media.MediaRecorder
+import android.os.Environment
+import java.io.File
+import android.os.Build
 import android.os.CountDownTimer
 import android.view.Gravity
 import android.widget.Button
@@ -18,6 +22,8 @@ class UtilityActivity : Activity() {
     private var elapsed = 0L
     private var running = false
     private var countdown: CountDownTimer? = null
+    private var recorder: MediaRecorder? = null
+    private var audioFile: File? = null
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
@@ -42,7 +48,10 @@ class UtilityActivity : Activity() {
             }
             "timer" -> add("Set countdown") { showTimerDialog() }
             "screen" -> add("Open device screen capture") { Toast.makeText(this, "Use the system Screen Record tile to start a capture.", Toast.LENGTH_LONG).show() }
-            "sound" -> add("Sound recorder") { Toast.makeText(this, "Sound recording setup will request microphone permission.", Toast.LENGTH_LONG).show() }
+            "sound" -> {
+                add("Start sound recording") { startSoundRecording() }
+                add("Stop and save") { stopSoundRecording() }
+            }
             else -> {
                 add("Stopwatch") { startActivity(android.content.Intent(this, UtilityActivity::class.java).putExtra("mode", "stopwatch")) }
                 add("Timer") { startActivity(android.content.Intent(this, UtilityActivity::class.java).putExtra("mode", "timer")) }
@@ -65,6 +74,35 @@ class UtilityActivity : Activity() {
             }.start()
         }.setNegativeButton("Cancel", null).show()
     }
+    private fun startSoundRecording() {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 27)
+            status.text = "Allow microphone access, then tap Start again"
+            return
+        }
+        try {
+            val folder = getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: filesDir
+            audioFile = File(folder, "sound-" + System.currentTimeMillis() + ".m4a")
+            recorder = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(this) else MediaRecorder()
+            recorder?.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setOutputFile(audioFile!!.absolutePath)
+                prepare()
+                start()
+            }
+            status.text = "Recording…"
+        } catch (e: Exception) {
+            recorder?.release(); recorder = null
+            status.text = "Could not start: " + (e.message ?: "unknown error")
+        }
+    }
+    private fun stopSoundRecording() {
+        try { recorder?.stop(); status.text = "Saved " + (audioFile?.name ?: "audio file") }
+        catch (_: Exception) { status.text = "Recording was too short to save" }
+        finally { recorder?.release(); recorder = null }
+    }
     private fun format(ms: Long) = String.format(Locale.US, "%02d:%02d.%1d", ms / 60000, (ms / 1000) % 60, (ms % 1000) / 100)
-    override fun onDestroy() { handler.removeCallbacks(ticker); countdown?.cancel(); super.onDestroy() }
+    override fun onDestroy() { handler.removeCallbacks(ticker); countdown?.cancel(); if (recorder != null) stopSoundRecording(); super.onDestroy() }
 }
