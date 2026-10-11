@@ -66,6 +66,9 @@ class ScreenRecordingService : Service() {
             }
             val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             projection = manager.getMediaProjection(resultCode, data)
+            projection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() { stopCapture(); stopSelf() }
+            }, android.os.Handler(android.os.Looper.getMainLooper()))
             display = projection?.createVirtualDisplay("DynamicIslandCapture", width, height, density,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, recorder?.surface, null, null)
             recorder?.start()
