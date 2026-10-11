@@ -266,6 +266,7 @@ class IslandOverlayService : Service() {
             "ISLAND_STOPWATCH" -> showForEvent("stopwatch")
             "ISLAND_SOUND" -> showForEvent("sound")
             "ISLAND_SCREEN" -> showForEvent("screen")
+            "ISLAND_DONE" -> { if (!charging) { hasNotification = false; island?.visibility = View.GONE }; expanded = false }
         }
         return START_STICKY
     }
