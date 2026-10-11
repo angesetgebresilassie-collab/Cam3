@@ -17,6 +17,7 @@ class IslandNotificationListener : NotificationListenerService() {
             .putString("notification_title", title.take(100))
             .putString("notification_text", text.take(180))
             .putString("notification_package", sbn.packageName)
+            .putBoolean("notification_is_media", sbn.notification.category == Notification.CATEGORY_TRANSPORT)
             .putLong("notification_time", sbn.postTime)
             .apply()
         runCatching { startService(android.content.Intent(this, IslandOverlayService::class.java).setAction("ISLAND_NOTIFICATION")) }
