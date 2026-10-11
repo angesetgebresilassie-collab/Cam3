@@ -29,17 +29,20 @@ class ScreenRecordingService : Service() {
             return START_NOT_STICKY
         }
         val resultCode = intent?.getIntExtra("resultCode", 0) ?: 0
-        val data = if (Build.VERSION.SDK_INT >= 33) intent?.getParcelableExtra("data", Intent::class.java)
-            else @Suppress("DEPRECATION") intent?.getParcelableExtra("data") as? Intent
+        @Suppress("DEPRECATION")
+        val data: Intent? = if (Build.VERSION.SDK_INT >= 33) intent?.getParcelableExtra("data", Intent::class.java)
+            else intent?.getParcelableExtra("data")
         if (data == null) { stopSelf(); return START_NOT_STICKY }
         val channel = "screen_capture"
         if (Build.VERSION.SDK_INT >= 26) {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
                 NotificationChannel(channel, "Screen capture", NotificationManager.IMPORTANCE_LOW)
             )
-            startForeground(52, Notification.Builder(this, channel)
+            val notice = Notification.Builder(this, channel)
                 .setContentTitle("Screen capture active").setContentText("Use the app to stop and save")
-                .setSmallIcon(android.R.drawable.presence_video_online).build(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                .setSmallIcon(android.R.drawable.presence_video_online).build()
+            if (Build.VERSION.SDK_INT >= 29) startForeground(52, notice, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            else startForeground(52, notice)
         }
         try {
             val metrics = DisplayMetrics()
