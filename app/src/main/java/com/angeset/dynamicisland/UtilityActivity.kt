@@ -51,7 +51,7 @@ class UtilityActivity : Activity() {
             "timer" -> add("Set countdown") { showTimerDialog() }
             "screen" -> {
                 add("Start screen recording") { val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager; startActivityForResult(mgr.createScreenCaptureIntent(), 41) }
-                add("Stop and save") { startService(android.content.Intent(this, ScreenRecordingService::class.java).setAction("STOP")); status.text = "Stopped. Video is saved in app Movies storage." }
+                add("Stop and save") { startService(android.content.Intent(this, ScreenRecordingService::class.java).setAction("STOP")); startService(android.content.Intent(this, IslandOverlayService::class.java).setAction("ISLAND_DONE")); status.text = "Stopped. Video is saved in app Movies storage." }
             }
             "sound" -> {
                 add("Start sound recording") { startSoundRecording() }
@@ -75,7 +75,7 @@ class UtilityActivity : Activity() {
             countdown?.cancel()
             countdown = object : CountDownTimer(seconds * 1000, 100) {
                 override fun onTick(ms: Long) { status.text = "Timer  " + String.format(Locale.US, "%02d:%04.1f", ms / 60000, (ms % 60000) / 1000.0) }
-                override fun onFinish() { status.text = "Timer complete"; Toast.makeText(this@UtilityActivity, "Timer complete", Toast.LENGTH_LONG).show() }
+                override fun onFinish() { status.text = "Timer complete"; startService(android.content.Intent(this@UtilityActivity, IslandOverlayService::class.java).setAction("ISLAND_DONE")); Toast.makeText(this@UtilityActivity, "Timer complete", Toast.LENGTH_LONG).show() }
             }.start()
         }.setNegativeButton("Cancel", null).show()
     }
@@ -115,7 +115,7 @@ class UtilityActivity : Activity() {
     private fun stopSoundRecording() {
         try { recorder?.stop(); status.text = "Saved " + (audioFile?.name ?: "audio file") }
         catch (_: Exception) { status.text = "Recording was too short to save" }
-        finally { recorder?.release(); recorder = null }
+        finally { recorder?.release(); recorder = null; startService(android.content.Intent(this, IslandOverlayService::class.java).setAction("ISLAND_DONE")) }
     }
     private fun format(ms: Long) = String.format(Locale.US, "%02d:%02d.%1d", ms / 60000, (ms / 1000) % 60, (ms % 1000) / 100)
     override fun onDestroy() { handler.removeCallbacks(ticker); countdown?.cancel(); if (recorder != null) stopSoundRecording(); super.onDestroy() }
